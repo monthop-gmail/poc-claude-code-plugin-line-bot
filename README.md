@@ -17,27 +17,25 @@ Web UI  → Agent Service (botforge) → Claude AI → ตอบกลับ
 - Web UI มีระบบ Login
 - Agent Service ใช้ botforge server (Hono + Agent SDK 0.2.85)
 
-## Comparison
+## Claude Code CLI vs LINE Bot + Web UI
 
-| Feature | Claude Code CLI | LINE Bot | Web UI |
-|---------|:-:|:-:|:-:|
-| เข้าถึง | Terminal | มือถือ (LINE) | Browser |
-| Tool use (Read, Edit, Bash) | ✅ | ✅ | ✅ |
-| MCP support | ✅ | ✅ | ✅ |
-| Session resume | ✅ | ✅ | ✅ |
-| ใช้จากมือถือ | ❌ | ✅ | ⚠️ จอเล็ก |
-| Notification | ❌ | ✅ LINE แจ้งเตือน | ❌ |
-| ไม่ต้องติดตั้ง | ❌ ต้องติดตั้ง CLI | ✅ มี LINE ก็พอ | ✅ เปิด browser |
-| ดู session ทั้งหมด | ❌ | ❌ เห็นแค่ของตัวเอง | ✅ sidebar |
-| ดู session คนอื่น | ❌ | ❌ | ✅ |
-| Cost tracking | ❌ | `/cost` | ✅ เห็นตลอด |
-| Real-time streaming | ✅ | ❌ รอจนตอบเสร็จ | ✅ SSE |
-| ข้อความยาว | ✅ ไม่จำกัด | ❌ ตัด 5000 ตัวอักษร | ✅ ไม่จำกัด |
-| Copy code | ✅ | ❌ ลำบาก | ✅ select + copy |
-| Speed | ⚡ เร็วสุด | 🐢 +2-3s (ผ่าน API) | 🐢 +2-3s (ผ่าน API) |
-| Privacy | ✅ local เท่านั้น | ⚠️ ผ่าน LINE server | ✅ self-hosted |
-| Group chat | ❌ | ✅ (รองรับ) | ❌ |
-| ค่าใช้จ่ายเพิ่ม | ไม่มี | ไม่มี (ใช้ OAuth เดียวกัน) | ไม่มี |
+| Feature | Claude Code CLI | LINE Bot + Web UI (ของเรา) |
+|---------|:-:|:-:|
+| เข้าถึง | Terminal เท่านั้น | มือถือ (LINE) + Browser |
+| ไม่ต้องติดตั้ง | ❌ ต้องติดตั้ง CLI | ✅ มี LINE หรือ browser ก็พอ |
+| ใช้จากมือถือ | ❌ | ✅ ส่ง LINE ได้ทันที |
+| Notification | ❌ | ✅ LINE แจ้งเตือนเมื่อตอบ |
+| Group chat | ❌ | ✅ ใช้ร่วมกันใน LINE group |
+| ดู session ทั้งหมด | ❌ | ✅ Web UI sidebar |
+| Cost tracking | ❌ | ✅ `/cost` + แสดงใน Web UI |
+| แชร์ session (LINE + Web) | ❌ | ✅ ดูและสนทนาต่อได้ทั้ง 2 ช่องทาง |
+| Tool use (Read, Edit, Bash) | ✅ | ✅ |
+| MCP support | ✅ | ✅ |
+| Session resume | ✅ | ✅ |
+| Real-time streaming | ✅ | ✅ Web UI (SSE) / LINE รอจนเสร็จ |
+| Speed | ⚡ เร็วสุด (local) | 🐢 +2-3s (ผ่าน HTTP) |
+| Privacy | ✅ local เท่านั้น | ⚠️ LINE ผ่าน server / Web UI self-hosted |
+| ค่าใช้จ่ายเพิ่ม | ไม่มี | ไม่มี (ใช้ OAuth เดียวกัน) |
 
 ## LINE Commands
 
