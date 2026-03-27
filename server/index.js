@@ -7,7 +7,8 @@ const config = {
 };
 
 const port = process.env.PORT || 3000;
-const agentServiceUrl = process.env.AGENT_SERVICE_URL || "http://claude-agent-service:4000";
+const serverUrl = process.env.SERVER_URL || "http://claude-agent-service:4096";
+const serverPassword = process.env.SERVER_PASSWORD || "";
 const lineOaUrl = process.env.LINE_OA_URL || "";
 
 if (!config.channelAccessToken || !config.channelSecret) {
@@ -19,26 +20,47 @@ const client = new messagingApi.MessagingApiClient({
   channelAccessToken: config.channelAccessToken,
 });
 
+// userId → sessionId
+const sessions = new Map();
+
 function validateSignature(body, signature) {
-  const hash = crypto
-    .createHmac("sha256", config.channelSecret)
-    .update(body)
-    .digest("base64");
-  return hash === signature;
+  return crypto.createHmac("sha256", config.channelSecret).update(body).digest("base64") === signature;
 }
 
-async function chatWithAgent(userId, message) {
-  const res = await fetch(`${agentServiceUrl}/chat`, {
+function authHeaders() {
+  const h = { "Content-Type": "application/json" };
+  if (serverPassword) h["Authorization"] = `Bearer ${serverPassword}`;
+  return h;
+}
+
+async function getOrCreateSession(userId) {
+  if (sessions.has(userId)) return sessions.get(userId);
+
+  const res = await fetch(`${serverUrl}/session`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ userId, message, source: "line" }),
+    headers: authHeaders(),
+    body: JSON.stringify({}),
   });
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error || `Agent service error: ${res.status}`);
-  }
   const data = await res.json();
-  return data.response;
+  sessions.set(userId, data.id);
+  console.log(`[${ts()}] New session for ${userId}: ${data.id}`);
+  return data.id;
+}
+
+async function sendMessage(sessionId, prompt) {
+  const res = await fetch(`${serverUrl}/session/${sessionId}/message`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ prompt }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Server error ${res.status}: ${err}`);
+  }
+
+  const data = await res.json();
+  return data.result || data.text || "Done.";
 }
 
 async function replyToLine(replyToken, text) {
@@ -52,63 +74,93 @@ async function replyToLine(replyToken, text) {
       replyToken,
       messages: [{ type: "text", text: truncated }],
     });
-    console.log(`[${new Date().toISOString()}] Replied: ${truncated.substring(0, 100)}...`);
+    console.log(`[${ts()}] Replied: ${truncated.substring(0, 80)}...`);
   } catch (err) {
-    console.error("Failed to reply to LINE:", err.message);
+    console.error("Failed to reply:", err.message);
   }
 }
 
+function ts() { return new Date().toISOString(); }
+
 async function handleTextMessage(event) {
-  const userMessage = event.message.text;
+  const text = event.message.text;
   const replyToken = event.replyToken;
   const userId = event.source.userId;
 
-  console.log(`[${new Date().toISOString()}] User ${userId}: ${userMessage}`);
+  console.log(`[${ts()}] User ${userId}: ${text}`);
 
   // /help
-  if (userMessage.trim() === "/help") {
-    await replyToLine(replyToken, "Claude Code LINE Bot\n\n/new - เริ่ม session ใหม่\n/about - เกี่ยวกับ bot\n/help - แสดงคำสั่ง\n\nพิมพ์ข้อความอะไรก็ได้เพื่อคุยกับ AI");
+  if (text.trim() === "/help") {
+    await replyToLine(replyToken, "Claude Code LINE Bot\n\n/new - เริ่ม session ใหม่\n/abort - ยกเลิกคำสั่งที่กำลังทำงาน\n/cost - ดูค่าใช้จ่าย\n/about - เกี่ยวกับ bot\n/help - แสดงคำสั่ง\n\nพิมพ์ข้อความอะไรก็ได้เพื่อคุยกับ AI");
     return;
   }
 
   // /about
-  if (userMessage.trim() === "/about") {
+  if (text.trim() === "/about") {
     const aboutText = `Claude Code LINE Bot\n\nAI coding assistant ผ่าน LINE\nส่งข้อความเพื่อถามคำถามหรือเขียนโค้ดได้เลย${lineOaUrl ? `\n\nAdd friend: ${lineOaUrl}` : ""}`;
     await replyToLine(replyToken, aboutText);
     return;
   }
 
   // /new
-  if (userMessage.trim() === "/new") {
-    try {
-      await fetch(`${agentServiceUrl}/reset`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId }),
-      });
-      await replyToLine(replyToken, "เริ่ม session ใหม่แล้ว พิมพ์ข้อความได้เลย!");
-    } catch (err) {
-      await replyToLine(replyToken, `Error: ${err.message}`);
+  if (text.trim() === "/new") {
+    const sessionId = sessions.get(userId);
+    if (sessionId) {
+      await fetch(`${serverUrl}/session/${sessionId}`, { method: "DELETE", headers: authHeaders() });
+    }
+    sessions.delete(userId);
+    await replyToLine(replyToken, "เริ่ม session ใหม่แล้ว พิมพ์ข้อความได้เลย!");
+    return;
+  }
+
+  // /abort
+  if (text.trim() === "/abort") {
+    const sessionId = sessions.get(userId);
+    if (sessionId) {
+      await fetch(`${serverUrl}/session/${sessionId}/abort`, { method: "POST", headers: authHeaders() });
+      await replyToLine(replyToken, "ยกเลิกคำสั่งแล้ว");
+    } else {
+      await replyToLine(replyToken, "ไม่มี session ที่กำลังทำงานอยู่");
     }
     return;
   }
 
+  // /cost
+  if (text.trim() === "/cost") {
+    const sessionId = sessions.get(userId);
+    if (sessionId) {
+      const res = await fetch(`${serverUrl}/session/${sessionId}`, { headers: authHeaders() });
+      const data = await res.json();
+      await replyToLine(replyToken, `Session: ${sessionId}\nCost: $${(data.totalCost || 0).toFixed(4)}\nMessages: ${(data.messages || []).length}`);
+    } else {
+      await replyToLine(replyToken, "ยังไม่มี session");
+    }
+    return;
+  }
+
+  // Normal message
   try {
-    const response = await chatWithAgent(userId, userMessage);
+    const sessionId = await getOrCreateSession(userId);
+    const response = await sendMessage(sessionId, text);
     await replyToLine(replyToken, response);
   } catch (err) {
     console.error("Error:", err.message);
+    // Reset session on error
+    if (err.message.includes("not found") || err.message.includes("404")) {
+      sessions.delete(userId);
+    }
     await replyToLine(replyToken, `Error: ${err.message}`);
   }
 }
 
 const server = Bun.serve({
   port,
+  hostname: "0.0.0.0",
   async fetch(req) {
     const url = new URL(req.url);
 
     if (req.method === "GET" && url.pathname === "/health") {
-      return Response.json({ status: "ok", timestamp: new Date().toISOString() });
+      return Response.json({ status: "ok", timestamp: ts() });
     }
 
     if (req.method === "POST" && url.pathname === "/webhook") {
@@ -135,9 +187,9 @@ const server = Bun.serve({
 
 console.log(`
 ========================================
-  Claude Code LINE Bot (Bun)
+  Claude Code LINE Bot
 ========================================
-  Port:          ${server.port}
-  Agent Service: ${agentServiceUrl}
+  Port:    ${server.port}
+  Server:  ${serverUrl}
 ========================================
 `);

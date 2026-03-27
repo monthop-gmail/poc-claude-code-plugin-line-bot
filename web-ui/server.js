@@ -1,6 +1,7 @@
-const agentServiceUrl = process.env.AGENT_SERVICE_URL || "http://claude-agent-service:4000";
+const agentServiceUrl = process.env.AGENT_SERVICE_URL || "http://claude-agent-service:4096";
 const port = process.env.PORT || 4096;
 const password = process.env.WEB_PASSWORD || "";
+const apiPassword = process.env.API_PASSWORD || "";
 
 function checkAuth(req) {
   if (!password) return true;
@@ -8,22 +9,26 @@ function checkAuth(req) {
   return cookie.includes(`auth=${password}`);
 }
 
+function apiHeaders() {
+  const h = { "Content-Type": "application/json" };
+  if (apiPassword) h["Authorization"] = `Bearer ${apiPassword}`;
+  return h;
+}
+
 const server = Bun.serve({
   port,
+  idleTimeout: 255,
   async fetch(req) {
     const url = new URL(req.url);
 
-    // Login page
+    // Login
     if (url.pathname === "/login") {
       if (req.method === "POST") {
         const form = await req.formData();
         if (form.get("password") === password) {
           return new Response(null, {
             status: 302,
-            headers: {
-              Location: "/",
-              "Set-Cookie": `auth=${password}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400`,
-            },
+            headers: { Location: "/", "Set-Cookie": `auth=${password}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400` },
           });
         }
         return new Response(loginHTML("Wrong password"), { headers: { "Content-Type": "text/html; charset=utf-8" } });
@@ -31,24 +36,17 @@ const server = Bun.serve({
       return new Response(loginHTML(), { headers: { "Content-Type": "text/html; charset=utf-8" } });
     }
 
-    // Check auth for all other routes
     if (password && !checkAuth(req)) {
       return new Response(null, { status: 302, headers: { Location: "/login" } });
     }
 
-    // Proxy /api/events → SSE passthrough
-    if (url.pathname === "/api/events") {
-      const agentRes = await fetch(`${agentServiceUrl}/events`, {
-        headers: { Accept: "text/event-stream" },
-        signal: req.signal,
-      });
+    // Proxy /api/event → SSE passthrough (botforge uses /event)
+    if (url.pathname === "/api/event") {
+      const headers = { Accept: "text/event-stream" };
+      if (apiPassword) headers["Authorization"] = `Bearer ${apiPassword}`;
+      const agentRes = await fetch(`${agentServiceUrl}/event`, { headers, signal: req.signal });
       return new Response(agentRes.body, {
-        headers: {
-          "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache",
-          "Connection": "keep-alive",
-          "X-Accel-Buffering": "no",
-        },
+        headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no" },
       });
     }
 
@@ -59,7 +57,7 @@ const server = Bun.serve({
 
       const proxyRes = await fetch(agentUrl, {
         method: req.method,
-        headers: { "Content-Type": "application/json" },
+        headers: apiHeaders(),
         body: req.method === "POST" ? await req.text() : undefined,
       });
 

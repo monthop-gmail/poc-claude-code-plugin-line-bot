@@ -1,21 +1,18 @@
 services:
   claude-agent-service:
-    build:
-      context: .
-      dockerfile: Dockerfile.agent
+    build: ./agent-service
     container_name: claude-agent-service
     restart: unless-stopped
     environment:
-      - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-sonnet-4-6}
-      - CLAUDE_MAX_TURNS=${CLAUDE_MAX_TURNS:-3}
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-sonnet}
+      - CLAUDE_MAX_TURNS=${CLAUDE_MAX_TURNS:-10}
       - CLAUDE_MAX_BUDGET_USD=${CLAUDE_MAX_BUDGET_USD:-1.00}
+      - API_PASSWORD=${API_PASSWORD:-}
       - WORKSPACE_DIR=/workspace
       - PORT=4000
     volumes:
-      # OAuth credentials from host
       - ~/.claude/.credentials.json:/home/claude/.claude/.credentials.json
       - ~/.claude/settings.json:/home/claude/.claude/settings.json:ro
-      # Persistent session storage
       - claude-projects:/home/claude/.claude/projects
     networks:
       - cloudflare-net
@@ -29,7 +26,8 @@ services:
     env_file:
       - .env
     environment:
-      - AGENT_SERVICE_URL=http://claude-agent-service:4000
+      - SERVER_URL=http://claude-agent-service:4000
+      - SERVER_PASSWORD=${API_PASSWORD:-}
     depends_on:
       - claude-agent-service
     networks:
@@ -44,6 +42,7 @@ services:
     environment:
       - AGENT_SERVICE_URL=http://claude-agent-service:4000
       - WEB_PASSWORD=${WEB_PASSWORD:-}
+      - API_PASSWORD=${API_PASSWORD:-}
     depends_on:
       - claude-agent-service
     networks:

@@ -1,26 +1,29 @@
-# Claude Code LINE Bot Plugin
+# Claude Code LINE Bot
 
-Claude Code plugin ที่เชื่อม LINE Bot เข้ากับ Claude Code CLI — ใช้ AI coding assistant ผ่าน LINE และ Web UI
+ใช้ Claude AI ผ่าน LINE และ Web UI — สร้างจาก Claude Agent SDK + botforge server
 
 ```
-LINE App → LINE Bot → Claude Agent Service (Agent SDK) → Claude AI → ตอบกลับ
-Web UI  → Agent Service (Agent SDK) → Claude AI → ตอบกลับ
+LINE App → LINE Bot → Agent Service (botforge) → Claude AI → ตอบกลับ
+Web UI  → Agent Service (botforge) → Claude AI → ตอบกลับ
 ```
 
 ## Features
 
 - คุยกับ Claude AI ผ่าน LINE ได้ทันที
 - Web UI สำหรับงานซับซ้อน พร้อม SSE real-time
-- จำบทสนทนาแยกตาม user (session management)
-- ข้อความจาก LINE แสดงใน Web UI ได้ (shared session)
-- `/new` เก็บ session เดิมไว้ ไม่หาย
+- จำบทสนทนาแยกตาม user (session management + resume)
+- ข้อความจาก LINE แสดงใน Web UI ได้ (shared sessions)
+- Cost tracking ต่อ session
 - Web UI มีระบบ Login
+- Agent Service ใช้ botforge server (Hono + Agent SDK 0.2.85)
 
 ## LINE Commands
 
 | Command | Description |
 |---------|-------------|
-| `/new` | เริ่ม session ใหม่ (เก็บ session เดิมไว้) |
+| `/new` | เริ่ม session ใหม่ |
+| `/abort` | ยกเลิกคำสั่งที่กำลังทำงาน |
+| `/cost` | ดูค่าใช้จ่ายของ session |
 | `/about` | เกี่ยวกับ bot |
 | `/help` | แสดงคำสั่ง |
 
@@ -31,10 +34,10 @@ Web UI  → Agent Service (Agent SDK) → Claude AI → ตอบกลับ
 │ LINE App │────▶│ cowork-claudecode│────▶│ claude-agent-     │
 │          │◀────│ -line-bot (:3000)│◀────│ service (:4000)   │
 └──────────┘     └──────────────────┘     │                   │
-                                          │ Agent SDK 0.2.85  │
-┌──────────┐     ┌──────────────────┐     │ + OAuth           │
-│ Browser  │────▶│ cowork-claudecode│────▶│                   │
-│ (login)  │◀────│ -server (:4096)  │◀────│ SSE broadcast     │
+                                          │ botforge server   │
+┌──────────┐     ┌──────────────────┐     │ (Hono + Agent SDK │
+│ Browser  │────▶│ cowork-claudecode│────▶│  + OAuth + SSE)   │
+│ (login)  │◀────│ -server (:4096)  │◀────│                   │
 └──────────┘     └──────────────────┘     └───────────────────┘
                           │
                  ┌────────┴────────┐
@@ -42,6 +45,20 @@ Web UI  → Agent Service (Agent SDK) → Claude AI → ตอบกลับ
                  │ (tunnel)        │
                  └─────────────────┘
 ```
+
+## Agent Service API (botforge server)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/session` | POST | สร้าง session ใหม่ |
+| `/session` | GET | list sessions ทั้งหมด |
+| `/session/:id` | GET | ดู session details |
+| `/session/:id/message` | POST | ส่งข้อความ `{ prompt }` |
+| `/session/:id/message` | GET | ดูประวัติข้อความ |
+| `/session/:id/abort` | POST | ยกเลิกคำสั่ง |
+| `/session/:id` | DELETE | ลบ session |
+| `/event` | GET | SSE real-time stream |
+| `/health` | GET | health check |
 
 ## Quick Start (Docker)
 
@@ -67,6 +84,9 @@ LINE_CHANNEL_SECRET=your_secret
 
 # Web UI password
 WEB_PASSWORD=your_password
+
+# API password (optional, สำหรับ protect agent service)
+API_PASSWORD=
 
 # Cloudflare Tunnel token (จาก https://dash.cloudflare.com/)
 CLOUDFLARE_TUNNEL_TOKEN=your_tunnel_token
@@ -102,24 +122,25 @@ docker compose up --build -d
 ## โครงสร้างไฟล์
 
 ```
-├── agent-service/
-│   ├── index.ts          # Agent service (Agent SDK 0.2.85 + session + SSE)
-│   └── package.json
+├── agent-service/            # botforge server (shared service)
+│   ├── Dockerfile
+│   ├── package.json
+│   └── src/
+│       ├── index.ts          # Hono HTTP server + REST API
+│       ├── claude.ts         # Agent SDK wrapper (query, resume, SSE)
+│       ├── session.ts        # Session management (CRUD, cost tracking)
+│       └── events.ts         # SSE event bus
 ├── server/
-│   ├── index.js          # LINE Bot webhook server
+│   ├── index.js              # LINE Bot webhook server
 │   ├── package.json
 │   └── .env.example
 ├── web-ui/
-│   ├── index.html        # Web UI (sessions, chat, SSE real-time)
-│   └── server.js         # Web server with login
-├── .claude-plugin/
-│   └── plugin.json       # Claude Code plugin manifest
-├── skills/               # Plugin skills (start/stop)
-├── Dockerfile.agent      # Agent service (node + claude CLI)
-├── Dockerfile.linebot    # LINE Bot (bun)
-├── Dockerfile.webui      # Web UI (bun)
+│   ├── index.html            # Web UI (sessions, chat, SSE real-time)
+│   └── server.js             # Web server with login + proxy
+├── Dockerfile.linebot
+├── Dockerfile.webui
 ├── docker-compose.yml
-└── .env                  # credentials (ไม่อยู่ใน git)
+└── .env                      # credentials (ไม่อยู่ใน git)
 ```
 
 ## Cloudflare Tunnel Setup
