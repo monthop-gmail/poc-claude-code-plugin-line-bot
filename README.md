@@ -1,6 +1,6 @@
 # Claude Code LINE Bot
 
-ใช้ Claude AI ผ่าน LINE และ Web UI — สร้างจาก Claude Agent SDK + botforge server
+ใช้ Claude AI ผ่าน LINE และ Web UI — สร้างจาก Claude Agent SDK + [botforge](https://github.com/monthop-gmail/botforge) server
 
 ```
 LINE App → LINE Bot → Agent Service (botforge) → Claude AI → ตอบกลับ
@@ -66,7 +66,7 @@ Web UI  → Agent Service (botforge) → Claude AI → ตอบกลับ
                  └─────────────────┘
 ```
 
-## Agent Service API (botforge server)
+## Agent Service API ([botforge](https://github.com/monthop-gmail/botforge) server)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
