@@ -1,0 +1,25 @@
+services:
+  cowork-claudecode-line-bot:
+    build: .
+    container_name: cowork-claudecode-line-bot
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    volumes:
+      - ~/.claude:/root/.claude:ro
+    networks:
+      - cloudflare-net
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cowork-claudecode-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    networks:
+      - cloudflare-net
+
+networks:
+  cloudflare-net:
+    driver: bridge

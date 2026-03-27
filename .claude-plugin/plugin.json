@@ -1,0 +1,10 @@
+{
+  "name": "claude-code-line-bot",
+  "description": "LINE Bot webhook server that connects LINE messages to Claude Code via headless CLI",
+  "version": "1.0.0",
+  "author": {
+    "name": "claude-code-line-bot"
+  },
+  "keywords": ["line", "bot", "webhook", "chat"],
+  "category": "integrations"
+}
