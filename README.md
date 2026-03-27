@@ -17,6 +17,28 @@ Web UI  → Agent Service (botforge) → Claude AI → ตอบกลับ
 - Web UI มีระบบ Login
 - Agent Service ใช้ botforge server (Hono + Agent SDK 0.2.85)
 
+## Comparison
+
+| Feature | Claude Code CLI | LINE Bot | Web UI |
+|---------|:-:|:-:|:-:|
+| เข้าถึง | Terminal | มือถือ (LINE) | Browser |
+| Tool use (Read, Edit, Bash) | ✅ | ✅ | ✅ |
+| MCP support | ✅ | ✅ | ✅ |
+| Session resume | ✅ | ✅ | ✅ |
+| ใช้จากมือถือ | ❌ | ✅ | ⚠️ จอเล็ก |
+| Notification | ❌ | ✅ LINE แจ้งเตือน | ❌ |
+| ไม่ต้องติดตั้ง | ❌ ต้องติดตั้ง CLI | ✅ มี LINE ก็พอ | ✅ เปิด browser |
+| ดู session ทั้งหมด | ❌ | ❌ เห็นแค่ของตัวเอง | ✅ sidebar |
+| ดู session คนอื่น | ❌ | ❌ | ✅ |
+| Cost tracking | ❌ | `/cost` | ✅ เห็นตลอด |
+| Real-time streaming | ✅ | ❌ รอจนตอบเสร็จ | ✅ SSE |
+| ข้อความยาว | ✅ ไม่จำกัด | ❌ ตัด 5000 ตัวอักษร | ✅ ไม่จำกัด |
+| Copy code | ✅ | ❌ ลำบาก | ✅ select + copy |
+| Speed | ⚡ เร็วสุด | 🐢 +2-3s (ผ่าน API) | 🐢 +2-3s (ผ่าน API) |
+| Privacy | ✅ local เท่านั้น | ⚠️ ผ่าน LINE server | ✅ self-hosted |
+| Group chat | ❌ | ✅ (รองรับ) | ❌ |
+| ค่าใช้จ่ายเพิ่ม | ไม่มี | ไม่มี (ใช้ OAuth เดียวกัน) | ไม่มี |
+
 ## LINE Commands
 
 | Command | Description |
