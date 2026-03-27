@@ -1,14 +1,51 @@
 services:
+  claude-agent-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    container_name: claude-agent-service
+    restart: unless-stopped
+    environment:
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-sonnet-4-6}
+      - CLAUDE_MAX_TURNS=${CLAUDE_MAX_TURNS:-3}
+      - CLAUDE_MAX_BUDGET_USD=${CLAUDE_MAX_BUDGET_USD:-1.00}
+      - WORKSPACE_DIR=/workspace
+      - PORT=4000
+    volumes:
+      # OAuth credentials from host
+      - ~/.claude/.credentials.json:/home/claude/.claude/.credentials.json
+      - ~/.claude/settings.json:/home/claude/.claude/settings.json:ro
+      # Persistent session storage
+      - claude-projects:/home/claude/.claude/projects
+    networks:
+      - cloudflare-net
+
   cowork-claudecode-line-bot:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.linebot
     container_name: cowork-claudecode-line-bot
     restart: unless-stopped
-    ports:
-      - "3000:3000"
     env_file:
       - .env
-    volumes:
-      - ~/.claude:/root/.claude:ro
+    environment:
+      - AGENT_SERVICE_URL=http://claude-agent-service:4000
+    depends_on:
+      - claude-agent-service
+    networks:
+      - cloudflare-net
+
+  cowork-claudecode-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.webui
+    container_name: cowork-claudecode-server
+    restart: unless-stopped
+    environment:
+      - AGENT_SERVICE_URL=http://claude-agent-service:4000
+      - WEB_PASSWORD=${WEB_PASSWORD:-}
+    depends_on:
+      - claude-agent-service
     networks:
       - cloudflare-net
 
@@ -17,9 +54,15 @@ services:
     container_name: cowork-claudecode-cloudflared
     restart: unless-stopped
     command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - cowork-claudecode-line-bot
+      - cowork-claudecode-server
     networks:
       - cloudflare-net
 
 networks:
   cloudflare-net:
     driver: bridge
+
+volumes:
+  claude-projects:

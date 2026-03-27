@@ -1,0 +1,9 @@
+FROM oven/bun:latest
+
+WORKDIR /app
+
+COPY web-ui/ ./
+
+EXPOSE 4096
+
+CMD ["bun", "run", "server.js"]

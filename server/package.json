@@ -1,7 +1,7 @@
 {
   "name": "claude-code-line-bot-server",
   "version": "1.0.0",
-  "description": "LINE Bot webhook server bridging LINE messages to Claude Code CLI",
+  "description": "LINE Bot webhook server calling Claude Agent Service",
   "main": "index.js",
   "scripts": {
     "start": "bun run index.js"

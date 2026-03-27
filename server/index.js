@@ -1,5 +1,4 @@
 import { messagingApi } from "@line/bot-sdk";
-import { spawn } from "child_process";
 import crypto from "crypto";
 
 const config = {
@@ -8,11 +7,11 @@ const config = {
 };
 
 const port = process.env.PORT || 3000;
-const claudeWorkDir = process.env.CLAUDE_WORK_DIR || process.env.HOME;
-const claudeTimeout = parseInt(process.env.CLAUDE_TIMEOUT || "120000", 10);
+const agentServiceUrl = process.env.AGENT_SERVICE_URL || "http://claude-agent-service:4000";
+const lineOaUrl = process.env.LINE_OA_URL || "";
 
 if (!config.channelAccessToken || !config.channelSecret) {
-  console.error("Missing LINE credentials. Copy .env.example to .env and fill in your credentials.");
+  console.error("Missing LINE credentials.");
   process.exit(1);
 }
 
@@ -28,36 +27,18 @@ function validateSignature(body, signature) {
   return hash === signature;
 }
 
-function callClaudeCode(prompt) {
-  return new Promise((resolve, reject) => {
-    const proc = spawn("claude", [
-      "--print",
-      "--output-format", "text",
-      "--max-turns", "1",
-      prompt,
-    ], {
-      cwd: claudeWorkDir,
-      timeout: claudeTimeout,
-      env: { ...process.env, NO_COLOR: "1" },
-    });
-
-    let stdout = "";
-    let stderr = "";
-
-    proc.stdout.on("data", (data) => { stdout += data.toString(); });
-    proc.stderr.on("data", (data) => { stderr += data.toString(); });
-
-    proc.on("close", (code) => {
-      if (code !== 0) return reject(new Error(stderr || `claude exited with code ${code}`));
-      const response = stdout.trim();
-      if (!response) return reject(new Error("Empty response from Claude Code"));
-      resolve(response);
-    });
-
-    proc.on("error", (err) => {
-      reject(new Error(`Failed to spawn claude: ${err.message}`));
-    });
+async function chatWithAgent(userId, message) {
+  const res = await fetch(`${agentServiceUrl}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId, message, source: "line" }),
   });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || `Agent service error: ${res.status}`);
+  }
+  const data = await res.json();
+  return data.response;
 }
 
 async function replyToLine(replyToken, text) {
@@ -84,11 +65,39 @@ async function handleTextMessage(event) {
 
   console.log(`[${new Date().toISOString()}] User ${userId}: ${userMessage}`);
 
+  // /help
+  if (userMessage.trim() === "/help") {
+    await replyToLine(replyToken, "Claude Code LINE Bot\n\n/new - เริ่ม session ใหม่\n/about - เกี่ยวกับ bot\n/help - แสดงคำสั่ง\n\nพิมพ์ข้อความอะไรก็ได้เพื่อคุยกับ AI");
+    return;
+  }
+
+  // /about
+  if (userMessage.trim() === "/about") {
+    const aboutText = `Claude Code LINE Bot\n\nAI coding assistant ผ่าน LINE\nส่งข้อความเพื่อถามคำถามหรือเขียนโค้ดได้เลย${lineOaUrl ? `\n\nAdd friend: ${lineOaUrl}` : ""}`;
+    await replyToLine(replyToken, aboutText);
+    return;
+  }
+
+  // /new
+  if (userMessage.trim() === "/new") {
+    try {
+      await fetch(`${agentServiceUrl}/reset`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      await replyToLine(replyToken, "เริ่ม session ใหม่แล้ว พิมพ์ข้อความได้เลย!");
+    } catch (err) {
+      await replyToLine(replyToken, `Error: ${err.message}`);
+    }
+    return;
+  }
+
   try {
-    const response = await callClaudeCode(userMessage);
+    const response = await chatWithAgent(userId, userMessage);
     await replyToLine(replyToken, response);
   } catch (err) {
-    console.error("Error processing message:", err.message);
+    console.error("Error:", err.message);
     await replyToLine(replyToken, `Error: ${err.message}`);
   }
 }
@@ -126,12 +135,9 @@ const server = Bun.serve({
 
 console.log(`
 ========================================
-  Claude Code LINE Bot Server (Bun)
+  Claude Code LINE Bot (Bun)
 ========================================
-  Port:        ${server.port}
-  Webhook URL: http://localhost:${server.port}/webhook
-  Health:      http://localhost:${server.port}/health
-  Work Dir:    ${claudeWorkDir}
-  Timeout:     ${claudeTimeout}ms
+  Port:          ${server.port}
+  Agent Service: ${agentServiceUrl}
 ========================================
 `);

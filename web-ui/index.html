@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Claude Code Web</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      height: 100vh;
+      display: flex;
+    }
+
+    /* Sidebar */
+    #sidebar {
+      width: 260px;
+      background: #16213e;
+      border-right: 1px solid #0f3460;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+    #sidebar h2 {
+      padding: 16px;
+      font-size: 14px;
+      color: #e94560;
+      border-bottom: 1px solid #0f3460;
+    }
+    #session-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+    .session-item {
+      padding: 10px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-bottom: 4px;
+      font-size: 13px;
+      transition: background 0.15s;
+    }
+    .session-item:hover { background: #1a1a2e; }
+    .session-item.active { background: #0f3460; }
+    .session-item .label { font-weight: 600; color: #ccc; }
+    .session-item .preview {
+      color: #888;
+      font-size: 11px;
+      margin-top: 2px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .session-item .badge {
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      margin-left: 6px;
+    }
+    .badge.line { background: #06c755; color: #fff; }
+    .badge.web { background: #e94560; color: #fff; }
+    #new-session-btn {
+      margin: 8px;
+      padding: 10px;
+      background: #0f3460;
+      border: 1px solid #1a3a6e;
+      border-radius: 8px;
+      color: #e0e0e0;
+      cursor: pointer;
+      font-size: 13px;
+      text-align: center;
+    }
+    #new-session-btn:hover { background: #1a3a6e; }
+
+    /* Main area */
+    #main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      background: #16213e;
+      padding: 12px 24px;
+      border-bottom: 1px solid #0f3460;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    header h1 { font-size: 16px; color: #e94560; }
+    #status { font-size: 12px; color: #888; }
+    .status-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 4px;
+    }
+    .status-dot.connected { background: #06c755; }
+    .status-dot.disconnected { background: #e94560; }
+
+    /* Chat */
+    #chat {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .msg {
+      max-width: 80%;
+      padding: 10px 14px;
+      border-radius: 12px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 14px;
+    }
+    .msg.user {
+      align-self: flex-end;
+      background: #0f3460;
+      border-bottom-right-radius: 4px;
+    }
+    .msg.assistant {
+      align-self: flex-start;
+      background: #16213e;
+      border: 1px solid #0f3460;
+      border-bottom-left-radius: 4px;
+    }
+    .msg .source-tag {
+      font-size: 10px;
+      color: #666;
+      margin-bottom: 4px;
+    }
+    .msg.error {
+      align-self: flex-start;
+      background: #3d0000;
+      border: 1px solid #e94560;
+    }
+    .typing {
+      align-self: flex-start;
+      color: #888;
+      font-style: italic;
+      padding: 8px 16px;
+    }
+
+    /* Input */
+    #input-area {
+      padding: 12px 24px;
+      background: #16213e;
+      border-top: 1px solid #0f3460;
+      display: flex;
+      gap: 12px;
+    }
+    #message-input {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1px solid #0f3460;
+      border-radius: 8px;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-size: 14px;
+      outline: none;
+      resize: none;
+      min-height: 44px;
+      max-height: 120px;
+    }
+    #message-input:focus { border-color: #e94560; }
+    button.send {
+      padding: 10px 20px;
+      background: #e94560;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button.send:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .empty-state {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #555;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div id="sidebar">
+    <h2>Sessions</h2>
+    <div id="session-list"></div>
+    <div id="new-session-btn" onclick="newSession()">+ New Session</div>
+  </div>
+
+  <div id="main">
+    <header>
+      <h1>Claude Code Web</h1>
+      <div id="status"><span class="status-dot disconnected" id="status-dot"></span> <span id="status-text">Connecting...</span></div>
+    </header>
+    <div id="chat"><div class="empty-state">Select a session or start a new one</div></div>
+    <div id="input-area">
+      <textarea id="message-input" placeholder="Type a message..." rows="1"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage()}"></textarea>
+      <button class="send" id="send-btn" onclick="sendMessage()">Send</button>
+    </div>
+  </div>
+
+  <script>
+    const API = "/api";
+    let activeUserId = null;
+    let myWebUserId = "web-" + (localStorage.getItem("webUserId") || (() => {
+      const id = crypto.randomUUID();
+      localStorage.setItem("webUserId", id);
+      return id;
+    })());
+
+    const chat = document.getElementById("chat");
+    const input = document.getElementById("message-input");
+    const sendBtn = document.getElementById("send-btn");
+
+    // --- SSE ---
+    function connectSSE() {
+      const es = new EventSource(`${API}/events`);
+
+      es.addEventListener("connected", () => {
+        document.getElementById("status-dot").className = "status-dot connected";
+        document.getElementById("status-text").textContent = "Connected";
+      });
+
+      es.addEventListener("message", (e) => {
+        const data = JSON.parse(e.data);
+        if (data.userId === activeUserId) {
+          // Skip user messages from web (already shown via optimistic UI)
+          if (data.message.role === "user" && data.message.source === "web") {
+            loadSessions();
+            return;
+          }
+          addMessage(data.message.text, data.message.role, data.message.source);
+        }
+        loadSessions();
+      });
+
+      es.addEventListener("session.reset", (e) => {
+        const data = JSON.parse(e.data);
+        if (data.userId === activeUserId) {
+          chat.innerHTML = "";
+          addMessage("Session reset", "assistant", "web");
+        }
+        loadSessions();
+      });
+
+      es.onerror = () => {
+        document.getElementById("status-dot").className = "status-dot disconnected";
+        document.getElementById("status-text").textContent = "Reconnecting...";
+      };
+    }
+
+    // --- Sessions ---
+    async function loadSessions() {
+      try {
+        const res = await fetch(`${API}/sessions`);
+        const data = await res.json();
+        const list = document.getElementById("session-list");
+        list.innerHTML = "";
+        for (const s of data.sessions) {
+          const div = document.createElement("div");
+          div.className = `session-item${s.userId === activeUserId ? " active" : ""}`;
+          div.innerHTML = `
+            <div>
+              <span class="label">${s.userId.substring(0, 16)}...</span>
+              <span class="badge ${s.source}">${s.source}</span>
+            </div>
+            <div class="preview">${s.lastMessage || "..."}</div>
+          `;
+          div.onclick = () => selectSession(s.userId);
+          list.appendChild(div);
+        }
+      } catch (err) {
+        console.error("Failed to load sessions:", err);
+      }
+    }
+
+    async function selectSession(userId) {
+      activeUserId = userId;
+      chat.innerHTML = "";
+
+      // Load history
+      try {
+        const res = await fetch(`${API}/sessions/${encodeURIComponent(userId)}`);
+        const data = await res.json();
+        for (const msg of data.messages) {
+          addMessage(msg.text, msg.role, msg.source, true);
+        }
+      } catch (err) {
+        addMessage(`Failed to load history: ${err.message}`, "error", "web");
+      }
+
+      loadSessions();
+      input.focus();
+    }
+
+    function newSession() {
+      activeUserId = myWebUserId;
+      chat.innerHTML = "";
+      addMessage("New session started", "assistant", "web", true);
+      loadSessions();
+      input.focus();
+    }
+
+    // --- Messages ---
+    function addMessage(text, role, source, skipDupeCheck) {
+      // Remove empty state
+      const empty = chat.querySelector(".empty-state");
+      if (empty) empty.remove();
+
+      const div = document.createElement("div");
+      div.className = `msg ${role}`;
+      if (source && source !== "web") {
+        const tag = document.createElement("div");
+        tag.className = "source-tag";
+        tag.textContent = `via ${source}`;
+        div.appendChild(tag);
+      }
+      const textNode = document.createElement("span");
+      textNode.textContent = text;
+      div.appendChild(textNode);
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    function setLoading(on) {
+      sendBtn.disabled = on;
+      const existing = chat.querySelector(".typing");
+      if (on && !existing) {
+        const div = document.createElement("div");
+        div.className = "typing";
+        div.textContent = "Claude is thinking...";
+        chat.appendChild(div);
+        chat.scrollTop = chat.scrollHeight;
+      } else if (!on && existing) {
+        existing.remove();
+      }
+    }
+
+    async function sendMessage() {
+      const message = input.value.trim();
+      if (!message || !activeUserId) return;
+
+      input.value = "";
+      setLoading(true);
+
+      // Show user message immediately (optimistic)
+      addMessage(message, "user", "web", true);
+
+      try {
+        const res = await fetch(`${API}/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: activeUserId, message, source: "web" }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          // SSE will deliver the assistant message
+          // But if SSE is down, show it directly
+          if (document.getElementById("status-dot").className.includes("disconnected")) {
+            addMessage(data.response, "assistant", "web");
+          }
+        } else {
+          addMessage(`Error: ${data.error}`, "error", "web");
+        }
+      } catch (err) {
+        addMessage(`Connection error: ${err.message}`, "error", "web");
+      }
+
+      setLoading(false);
+      loadSessions();
+      input.focus();
+    }
+
+    // --- Init ---
+    connectSSE();
+    loadSessions();
+  </script>
+</body>
+</html>
