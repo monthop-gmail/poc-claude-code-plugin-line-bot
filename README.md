@@ -36,6 +36,8 @@ Web UI  → Agent Service (botforge) → Claude AI → ตอบกลับ
 | Speed | ⚡ เร็วสุด (local) | 🐢 +2-3s (ผ่าน HTTP) |
 | Privacy | ✅ local เท่านั้น | ⚠️ LINE ผ่าน server / Web UI self-hosted |
 | ค่าใช้จ่ายเพิ่ม | ไม่มี | ไม่มี (ใช้ OAuth เดียวกัน) |
+| ต้องจ่าย Cloud | ❌ local | ❌ ใช้ Cloudflare Tunnel (ฟรี) |
+| Deploy | ❌ ไม่ได้ | ✅ Docker Compose + Tunnel |
 
 ## LINE Commands
 
