@@ -1,9 +1,9 @@
-import { spawn } from "child_process"
+import { query } from "@anthropic-ai/claude-agent-sdk"
 
 const port = Number(process.env.PORT ?? 4000)
 const model = process.env.CLAUDE_MODEL ?? "claude-sonnet-4-6"
 const maxTurns = Number(process.env.CLAUDE_MAX_TURNS ?? 3)
-const claudeTimeout = 120000
+const maxBudgetUsd = Number(process.env.CLAUDE_MAX_BUDGET_USD ?? 1.00)
 
 // --- Types ---
 interface Message {
@@ -33,35 +33,59 @@ function broadcast(event: string, data: any) {
   }
 }
 
-// --- Claude CLI ---
-function callClaude(prompt: string, sessionId?: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const args = ["--print", "--output-format", "text", "--model", model, "--max-turns", String(maxTurns)]
-    if (sessionId) args.push("--resume", sessionId)
-    args.push(prompt)
+// --- Claude Agent SDK ---
+async function callClaude(prompt: string, resumeSessionId?: string): Promise<{ text: string; sessionId: string; costUsd: number }> {
+  let sdkSessionId = ""
+  let resultText = ""
+  let costUsd = 0
+  let isError = false
 
-    const proc = spawn("claude", args, {
-      timeout: claudeTimeout,
-      env: { ...process.env, NO_COLOR: "1" },
-      stdio: ["ignore", "pipe", "pipe"],
-    })
-
-    let stdout = ""
-    let stderr = ""
-    proc.stdout.on("data", (d: Buffer) => { stdout += d.toString() })
-    proc.stderr.on("data", (d: Buffer) => { stderr += d.toString() })
-
-    proc.on("close", (code: number | null) => {
-      if (code !== 0) return reject(new Error(stderr || `claude exited with code ${code}`))
-      resolve(stdout.trim() || "Done.")
-    })
-    proc.on("error", (err: Error) => reject(new Error(`Failed to spawn claude: ${err.message}`)))
+  const q = query({
+    prompt,
+    options: {
+      model,
+      maxTurns,
+      maxBudgetUsd,
+      resume: resumeSessionId,
+      permissionMode: "bypassPermissions",
+      allowDangerouslySkipPermissions: true,
+    },
   })
+
+  for await (const msg of q) {
+    switch (msg.type) {
+      case "system": {
+        if ("session_id" in msg && msg.session_id) {
+          sdkSessionId = msg.session_id as string
+        }
+        break
+      }
+      case "assistant": {
+        const m = msg as any
+        sdkSessionId = m.session_id || sdkSessionId
+        break
+      }
+      case "result": {
+        const m = msg as any
+        sdkSessionId = m.session_id || sdkSessionId
+        costUsd = m.total_cost_usd ?? 0
+        isError = m.is_error ?? false
+        resultText = m.subtype === "success"
+          ? (m.result ?? "")
+          : (m.result ?? m.error ?? "Error")
+        if (m.subtype !== "success") isError = true
+        break
+      }
+    }
+  }
+
+  return { text: resultText || "Done.", sessionId: sdkSessionId, costUsd }
 }
 
 // --- Chat ---
 async function chat(userId: string, message: string, source: "line" | "web"): Promise<Message> {
   const session = sessions.get(userId)
+  const resumeSessionId = session?.sdkSessionId
 
   const userMsg: Message = {
     id: crypto.randomUUID(),
@@ -77,14 +101,30 @@ async function chat(userId: string, message: string, source: "line" | "web"): Pr
   }
 
   broadcast("message", { userId, message: userMsg })
-
-  console.log(`[${new Date().toISOString()}] ${source.toUpperCase()} | User: ${userId} | Message: ${message}`)
+  console.log(`[${new Date().toISOString()}] ${source.toUpperCase()} | User: ${userId} | Session: ${resumeSessionId ?? "new"} | ${message}`)
 
   let responseText: string
+  let newSessionId = resumeSessionId || ""
+
   try {
-    responseText = await callClaude(message)
+    const result = await callClaude(message, resumeSessionId)
+    responseText = result.text
+    newSessionId = result.sessionId || newSessionId
+    console.log(`[${new Date().toISOString()}] Cost: $${result.costUsd.toFixed(4)}`)
   } catch (err: any) {
-    responseText = `Error: ${err.message}`
+    // Session expired — retry without resume
+    if (resumeSessionId && (err?.message?.includes("not found") || err?.message?.includes("No conversation") || err?.message?.includes("exited with code"))) {
+      console.log(`[${new Date().toISOString()}] Session expired, retrying without resume`)
+      try {
+        const result = await callClaude(message)
+        responseText = result.text
+        newSessionId = result.sessionId
+      } catch (retryErr: any) {
+        responseText = `Error: ${retryErr.message}`
+      }
+    } else {
+      responseText = `Error: ${err.message}`
+    }
   }
 
   const assistantMsg: Message = {
@@ -97,11 +137,12 @@ async function chat(userId: string, message: string, source: "line" | "web"): Pr
 
   if (sessions.has(userId)) {
     const s = sessions.get(userId)!
+    s.sdkSessionId = newSessionId || s.sdkSessionId
     s.messages.push(assistantMsg)
     s.updatedAt = assistantMsg.createdAt
   } else {
     sessions.set(userId, {
-      sdkSessionId: "",
+      sdkSessionId: newSessionId,
       userId,
       messages: [userMsg, assistantMsg],
       createdAt: userMsg.createdAt,
@@ -151,7 +192,8 @@ const server = Bun.serve({
       const { userId, message, source = "web" } = body
       if (!userId || !message) return Response.json({ error: "userId and message are required" }, { status: 400, headers })
       const assistantMsg = await chat(userId, message, source)
-      return Response.json({ response: assistantMsg.text, sessionId: null }, { headers })
+      const session = sessions.get(userId)
+      return Response.json({ response: assistantMsg.text, sessionId: session?.sdkSessionId || null }, { headers })
     }
 
     if (req.method === "GET" && url.pathname === "/sessions") {
@@ -173,7 +215,6 @@ const server = Bun.serve({
     if (req.method === "POST" && url.pathname === "/reset") {
       const body = await req.json()
       const oldSession = sessions.get(body.userId)
-      // Archive old session with timestamp key so it stays visible
       if (oldSession && oldSession.messages.length > 0) {
         const archiveKey = `${body.userId}@${Date.now()}`
         sessions.set(archiveKey, { ...oldSession, userId: archiveKey })
@@ -189,10 +230,11 @@ const server = Bun.serve({
 
 console.log(`
 ========================================
-  Claude Agent Service (CLI)
+  Claude Agent Service (Agent SDK)
 ========================================
   Port:      ${server.port}
   Model:     ${model}
   Max Turns: ${maxTurns}
+  Budget:    $${maxBudgetUsd}
 ========================================
 `)

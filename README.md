@@ -3,8 +3,8 @@
 Claude Code plugin ที่เชื่อม LINE Bot เข้ากับ Claude Code CLI — ใช้ AI coding assistant ผ่าน LINE และ Web UI
 
 ```
-LINE App → LINE Bot → Claude Agent Service → Claude Code CLI → ตอบกลับ
-Web UI  → Agent Service → Claude Code CLI → ตอบกลับ
+LINE App → LINE Bot → Claude Agent Service (Agent SDK) → Claude AI → ตอบกลับ
+Web UI  → Agent Service (Agent SDK) → Claude AI → ตอบกลับ
 ```
 
 ## Features
@@ -31,10 +31,10 @@ Web UI  → Agent Service → Claude Code CLI → ตอบกลับ
 │ LINE App │────▶│ cowork-claudecode│────▶│ claude-agent-     │
 │          │◀────│ -line-bot (:3000)│◀────│ service (:4000)   │
 └──────────┘     └──────────────────┘     │                   │
-                                          │ claude --print    │
-┌──────────┐     ┌──────────────────┐     │ --model sonnet    │
+                                          │ Agent SDK 0.2.85  │
+┌──────────┐     ┌──────────────────┐     │ + OAuth           │
 │ Browser  │────▶│ cowork-claudecode│────▶│                   │
-│          │◀────│ -server (:4096)  │◀────│ SSE broadcast     │
+│ (login)  │◀────│ -server (:4096)  │◀────│ SSE broadcast     │
 └──────────┘     └──────────────────┘     └───────────────────┘
                           │
                  ┌────────┴────────┐
@@ -103,7 +103,7 @@ docker compose up --build -d
 
 ```
 ├── agent-service/
-│   ├── index.ts          # Agent service (Claude CLI + session + SSE)
+│   ├── index.ts          # Agent service (Agent SDK 0.2.85 + session + SSE)
 │   └── package.json
 ├── server/
 │   ├── index.js          # LINE Bot webhook server
